@@ -11,14 +11,15 @@ use std::io::{BufRead, BufReader, Write};
 use std::ops::Deref;
 use tokio::io;
 use tracing_subscriber::fmt::format;
-
+use std::net::SocketAddr;
+use lazy_static::lazy_static;
+use volo_gen::volo::example::GetItemRequest;
 pub struct S {
 	kv: Mutex<HashMap<String, String>>,
 	pub channels: Mutex<HashMap<String, Sender<String>>>,
 	pub aof: Mutex<File>,
 	pub port: Mutex<String>
 }
-
 impl S {
 	pub fn new() -> S {
 		S {kv: Mutex::new(HashMap::new()), channels: Mutex::new(HashMap::new()), aof: Mutex::new(OpenOptions::new().write(true).create(true).append(true).open("temp.txt").expect("Failed to open file")), port: Mutex::new(String::from("0000"))}
@@ -80,16 +81,60 @@ impl volo_gen::volo::example::ItemService for S {
 				if self.kv.lock().unwrap().get(&k) == None {
 					flag = 1;
 				}
+				let __req: volo_gen::volo::example::GetItemRequest = GetItemRequest {
+					op: "set1".into(),
+					key: k.clone().into(),
+					val: v.clone().into(),
+
+				};
 				match flag {
 					1 => {
 						self.kv.lock().unwrap().insert(k, v);
 						//resp.val = v.clone().into();
 						//resp.key = k.clone().into();
 						resp.status = true;
+						let addr: SocketAddr = "127.0.0.1:22222".parse().unwrap();
+						let sender = volo_gen::volo::example::ItemServiceClientBuilder::new("volo-example")
+							.address(addr)
+							.build();
+						sender.get_item(__req);
 						self.aof.lock().unwrap().write_all(option.as_ref()).expect("TODO: panic message");
 						println!("aof has been written!");
 						self.aof.lock().unwrap().flush().expect("Err");
 						println!("aof has been flushed!");
+					}
+					0 => {
+						resp.status = false;
+					}
+					_ => {
+						resp.status = false;
+					}
+				}
+			}
+			"set1" => {
+				resp.op = "set1".to_string().into();
+				//let k = _req.key.to_string();
+				//let v = _req.val.to_string();
+				let mut flag = 0;
+				if self.kv.lock().unwrap().get(&k) == None {
+					flag = 1;
+				}
+				match flag {
+					1 => {
+						self.kv.lock().unwrap().insert(k, v);
+						//resp.val = v.clone().into();
+						//resp.key = k.clone().into();
+						resp.status = true;
+						/*let addr: SocketAddr = "127.0.0.1:22222".parse().unwrap();
+						let sender = volo_gen::volo::example::ItemServiceClientBuilder::new("volo-example")
+							.address(addr)
+							.build();
+						sender.get_item(_req);*/
+
+						/*self.aof.lock().unwrap().write_all(option.as_ref()).expect("TODO: panic message");
+						println!("aof has been written!");
+						self.aof.lock().unwrap().flush().expect("Err");
+						println!("aof has been flushed!");*/
 					}
 					0 => {
 						resp.status = false;
@@ -190,6 +235,7 @@ impl volo_gen::volo::example::ItemService for S {
 		Ok(resp)
 		//Ok(Default::default())
 				}
+
 }
 pub struct FilterLayer;
 impl<S> volo::Layer<S> for FilterLayer {

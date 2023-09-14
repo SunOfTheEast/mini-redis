@@ -4,7 +4,7 @@ use std::net::SocketAddr;
 use volo_gen::volo::example::GetItemRequest;
 lazy_static! {
     static ref CLIENT: volo_gen::volo::example::ItemServiceClient = {
-        let addr: SocketAddr = "127.0.0.1:22222".parse().unwrap();
+        let addr: SocketAddr = "127.0.0.1:8848".parse().unwrap();
         volo_gen::volo::example::ItemServiceClientBuilder::new("volo-example")
             .address(addr)
             .build()
@@ -21,6 +21,15 @@ async fn main() {
         "set" => {
             req = GetItemRequest {
                 op: "set".into(),
+                key: args.remove(1).clone().into(),
+                val: args.remove(1).clone().into(),
+
+            };
+            println!("You set {} to {}", req.clone().key, req.clone().val);
+        }
+        "set1" => {
+            req = GetItemRequest {
+                op: "set1".into(),
                 key: args.remove(1).clone().into(),
                 val: args.remove(1).clone().into(),
 

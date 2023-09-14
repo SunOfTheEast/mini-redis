@@ -12,9 +12,14 @@ async fn main() {
     let mut db = S::new();
     let mut db_ = S::new();
     db_.init();
-    let addr: SocketAddr = "[::]:33333".parse().unwrap();
+    let addr = "[::]";
+    let mut args: Vec<String> = std::env::args().collect();
+    let port = args.remove(1).clone().to_string();
+    let addr = format!("[::]:{}", port);
+    let addr: SocketAddr = addr.parse().unwrap();
     let addr = volo::net::Address::from(addr);
     db.init();
+    db.set_port(port.as_str());
     volo_gen::volo::example::ItemServiceServer::new(db)
         .layer_front(FilterLayer)
         .run(addr)
