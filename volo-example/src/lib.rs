@@ -1,6 +1,7 @@
 #![feature(impl_trait_in_assoc_type)]
 
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::sync::Mutex;
 use anyhow::anyhow;
 use tokio::sync::broadcast;
@@ -21,7 +22,12 @@ pub struct S {
 
 impl S {
 	pub fn new() -> S {
-		S {kv: Mutex::new(HashMap::new()), channels: Mutex::new(HashMap::new()), aof: Mutex::new(OpenOptions::new().write(true).create(true).append(true).open("temp.txt").expect("Failed to open file")), port: Mutex::new(String::from("0000"))}
+		S {
+			kv: Mutex::new(HashMap::new()), 
+			channels: Mutex::new(HashMap::new()), 
+			aof: Mutex::new(OpenOptions::new().write(true).create(true).append(true).open("temp.txt").expect("Failed to open file")), 
+			port: Mutex::new(String::from(""))
+		}
 	}
 	pub fn init(&mut self) -> io::Result<()>{
 		//std::mem::drop(self.aof.lock().unwrap());
@@ -62,6 +68,7 @@ impl volo_gen::volo::example::ItemService for S {
 	async fn get_item(&self, _req: volo_gen::volo::example::GetItemRequest) -> core::result::Result<volo_gen::volo::example::GetItemResponse, volo_thrift::AnyhowError> {
 		let mut resp = volo_gen::volo::example::GetItemResponse{op: " ".into(), key: " ".into(), val: " ".into(), status: false};
 		println!("收到！");
+		println!("cur_port: {}", self.port.lock().unwrap());
 		let option = format!("{}\t{}\t{}\n", _req.op.to_string(), _req.key.to_string(), _req.val.to_string());
 		println!("option is {}", option);
 		let k = _req.key.to_string();
@@ -86,6 +93,14 @@ impl volo_gen::volo::example::ItemService for S {
 						//resp.val = v.clone().into();
 						//resp.key = k.clone().into();
 						resp.status = true;
+						if self.port.lock().unwrap().to_string() != "22222" {
+							println!("inner-send");
+							let addr: SocketAddr = "127.0.0.1:22222".parse().unwrap();
+							let sender = volo_gen::volo::example::ItemServiceClientBuilder::new("volo-example")
+								.address(addr)
+								.build();
+							sender.get_item(_req).await;
+						}
 						self.aof.lock().unwrap().write_all(option.as_ref()).expect("TODO: panic message");
 						println!("aof has been written!");
 						self.aof.lock().unwrap().flush().expect("Err");

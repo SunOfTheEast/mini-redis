@@ -1,2 +1,6 @@
 set	yangrundong	18
-get	yangrundong	 
+get	yangrundong	 set	abc	123
+set	abc	123
+set	abc	123
+set	abc	123
+set	abc	123
