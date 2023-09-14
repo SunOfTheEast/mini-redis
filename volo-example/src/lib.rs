@@ -11,30 +11,36 @@ use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use tokio::io;
 
+// const DEFAULT_PROXY_ADDR: &str = "7777";
+
 pub struct S {
 	kv: Mutex<HashMap<String, String>>,
 	pub channels: Mutex<HashMap<String, Sender<String>>>,
+	pub file_name: String,
 	pub aof: Mutex<File>,
 	pub port: Mutex<String>,
 	pub master: Option<String>,
-	pub slaves: Mutex<Vec<String>>
+	pub slaves: Mutex<Vec<String>>,
+	pub cluster: Mutex<Vec<String>>
 }
 
 impl S {
-	pub fn new() -> S {
+	pub fn new(fname: String) -> S {
 		S {
 			kv: Mutex::new(HashMap::new()), 
 			channels: Mutex::new(HashMap::new()), 
-			aof: Mutex::new(OpenOptions::new().write(true).create(true).append(true).open("temp.txt").expect("Failed to open file")), 
-			port: Mutex::new(String::from("")),
+			file_name: fname.clone(),
+			aof: Mutex::new(OpenOptions::new().write(true).create(true).append(true).open(fname.clone()).expect("Failed to open file")), 
+			port: Mutex::new(String::new()),
 			master: None,
-			slaves: Mutex::new(vec![])
+			slaves: Mutex::new(vec![]),
+			cluster: Mutex::new(vec![])
 		}
 	}
 	pub fn init(&mut self) -> io::Result<()>{
 		//std::mem::drop(self.aof.lock().unwrap());
 		//self.aof = Mutex::new(File::open("temp.txt").expect("Failed to open"));
-		let file = File::open("temp.txt")?;
+		let file = File::open(self.file_name.clone())?;
 		let reader = BufReader::new(file);
 		for line in reader.lines() {
 			let line = line?;
@@ -70,10 +76,30 @@ impl S {
 		self.slaves.lock().unwrap().push(slave_);
 	}
 	pub fn is_master(&self) -> bool {
-		self.master.is_none()
+		self.master.is_none() && self.cluster.lock().unwrap().is_empty()
 	}
 	pub fn is_slave(&self) -> bool {
 		self.master.is_some()
+	}
+	pub fn is_proxy(&self) -> bool {
+		!self.cluster.lock().unwrap().is_empty()
+	}
+	pub fn add_cluster(&self, serv: String) {
+		self.cluster.lock().unwrap().push(serv);
+	}
+	pub fn distr_port(&self, mut key: String) -> String {	// distribute
+		let sum: &mut u32 = &mut 0;
+		let len = key.len();
+		for i in 0..key.len() {
+			let ch = key.remove(0);
+			let sum = *sum + (ch as u32);
+			if i == len - 1 {
+				let cluster_size = self.cluster.lock().unwrap().len();
+				let ind = sum as usize % cluster_size;
+				return self.cluster.lock().unwrap()[ind].clone();
+			}
+		}
+		"7777".to_string()
 	}
 }
 
@@ -101,7 +127,7 @@ impl volo_gen::volo::example::ItemService for S {
 				let flag = self.is_master();
 				match flag {
 					true => {
-						self.kv.lock().unwrap().insert(k, v);
+						self.kv.lock().unwrap().insert(k.clone(), v);
 						//resp.val = v.clone().into();
 						//resp.key = k.clone().into();
 						resp.status = true;
@@ -126,6 +152,17 @@ impl volo_gen::volo::example::ItemService for S {
 					false => {
 						resp.status = false;
 					}
+				}
+				if self.is_proxy() {
+					resp.status = true;
+					let port = self.distr_port(k.clone());
+					println!("distributed to port {}", port);
+					let addr = format!("127.0.0.1:{}", port);
+					let addr: SocketAddr = addr.parse().unwrap();
+					let sender = volo_gen::volo::example::ItemServiceClientBuilder::new("volo-example")
+						.address(addr)
+						.build();
+					let _res = sender.get_item(_req).await;
 				}
 			}
 			"mset" => {
@@ -156,19 +193,40 @@ impl volo_gen::volo::example::ItemService for S {
 			"get" => {
 				resp.op = "get".to_string().into();
 				//let k = _req.key.to_string();
-				match self.kv.lock().unwrap().get(&k)  {
-					None => {
-						resp.status = false;
+				if self.is_proxy() {
+					let port = self.distr_port(k.clone());
+					println!("distributed to port {}", port);
+					let addr = format!("127.0.0.1:{}", port);
+					let addr: SocketAddr = addr.parse().unwrap();
+					let sender = volo_gen::volo::example::ItemServiceClientBuilder::new("volo-example")
+						.address(addr)
+						.build();
+					let res = sender.get_item(_req).await;
+					if let Ok(info) = res {
+						match info.status {
+							true => {
+								resp.val = info.val;
+								resp.status = true;
+							}
+							false => {
+								resp.status = false;
+							}
+						}
 					}
-					Some(t) => {
-						resp.val = t.clone().into();
-						//resp.key = k.clone().into();
-						resp.status = true;
-						//self.aof.lock().unwrap().write_all(option.as_ref()).expect("TODO: panic message");
-						// println!("aof has been written!");
-						//self.aof.lock().unwrap().flush().expect("Err");
-						// println!("aof has been flushed!");
-
+				} else {
+					match self.kv.lock().unwrap().get(&k)  {
+						None => {
+							resp.status = false;
+						}
+						Some(t) => {
+							resp.val = t.clone().into();
+							//resp.key = k.clone().into();
+							resp.status = true;
+							//self.aof.lock().unwrap().write_all(option.as_ref()).expect("TODO: panic message");
+							// println!("aof has been written!");
+							//self.aof.lock().unwrap().flush().expect("Err");
+							// println!("aof has been flushed!");
+						}
 					}
 				}
 			}
@@ -203,6 +261,19 @@ impl volo_gen::volo::example::ItemService for S {
 					}
 					false => {
 						resp.status = false;
+					}
+				}
+				if self.is_proxy() {
+					let port = self.distr_port(k.clone());
+					println!("distributed to port {}", port);
+					let addr = format!("127.0.0.1:{}", port);
+					let addr: SocketAddr = addr.parse().unwrap();
+					let sender = volo_gen::volo::example::ItemServiceClientBuilder::new("volo-example")
+						.address(addr)
+						.build();
+					let res = sender.get_item(_req).await;
+					if let Ok(info) = res {
+						resp.status = info.status;
 					}
 				}
 			}

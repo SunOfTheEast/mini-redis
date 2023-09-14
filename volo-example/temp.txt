@@ -1,2 +1,1 @@
 set	yrd	18
-set	yrd	20
