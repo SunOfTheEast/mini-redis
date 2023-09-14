@@ -1,6 +1,2 @@
-set	yangrundong	18
-get	yangrundong	 set	abc	123
-set	abc	123
-set	abc	123
-set	abc	123
-set	abc	123
+set	yrd	18
+set	yrd	20

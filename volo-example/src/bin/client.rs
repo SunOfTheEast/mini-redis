@@ -17,6 +17,8 @@ lazy_static! {
     };
 }
 
+// args: [command[]..] [port]
+
 #[volo::main]
 async fn main() {
     tracing_subscriber::fmt::init();
@@ -31,7 +33,7 @@ async fn main() {
                 val: args.remove(1).clone().into(),
 
             };
-            println!("You set {} to {}", req.clone().key, req.clone().val);
+            println!("You are going to set {} to {}", req.clone().key, req.clone().val);
         }
         "get" => {
             req = GetItemRequest {
@@ -73,7 +75,7 @@ async fn main() {
             println!("ILLEGAL!");
         }
     }
-    println!("request send!");
+    println!("request got sent!");
     let resp = CLIENT.get_item(req).await;
     println!("responsed!");
     match resp {
@@ -85,7 +87,7 @@ async fn main() {
                             println!("set success");
                         }
                         false => {
-                            println!("already existed");
+                            println!("set failed");
                         }
                     }
                 }
@@ -105,7 +107,7 @@ async fn main() {
                             println!("deleted");
                         }
                         false => {
-                            println!("not found");
+                            println!("delete failed");
                         }
                     }
                 }

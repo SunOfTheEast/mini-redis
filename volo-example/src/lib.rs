@@ -9,15 +9,15 @@ use tokio::sync::broadcast::Sender;
 use volo::FastStr;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
-use std::ops::Deref;
 use tokio::io;
-use tracing_subscriber::fmt::format;
 
 pub struct S {
 	kv: Mutex<HashMap<String, String>>,
 	pub channels: Mutex<HashMap<String, Sender<String>>>,
 	pub aof: Mutex<File>,
-	pub port: Mutex<String>
+	pub port: Mutex<String>,
+	pub master: Option<String>,
+	pub slaves: Mutex<Vec<String>>
 }
 
 impl S {
@@ -26,7 +26,9 @@ impl S {
 			kv: Mutex::new(HashMap::new()), 
 			channels: Mutex::new(HashMap::new()), 
 			aof: Mutex::new(OpenOptions::new().write(true).create(true).append(true).open("temp.txt").expect("Failed to open file")), 
-			port: Mutex::new(String::from(""))
+			port: Mutex::new(String::from("")),
+			master: None,
+			slaves: Mutex::new(vec![])
 		}
 	}
 	pub fn init(&mut self) -> io::Result<()>{
@@ -61,13 +63,26 @@ impl S {
 	pub fn set_port(&mut self, port_: &str){
 		self.port.lock().unwrap().push_str(port_);
 	}
-
+	pub fn set_master(&mut self, master_: String){
+		self.master = Some(master_);
+	}
+	pub fn set_slave(&mut self, slave_: String) {
+		self.slaves.lock().unwrap().push(slave_);
+	}
+	pub fn is_master(&self) -> bool {
+		self.master.is_none()
+	}
+	pub fn is_slave(&self) -> bool {
+		self.master.is_some()
+	}
 }
+
+
 #[volo::async_trait]
 impl volo_gen::volo::example::ItemService for S {
 	async fn get_item(&self, _req: volo_gen::volo::example::GetItemRequest) -> core::result::Result<volo_gen::volo::example::GetItemResponse, volo_thrift::AnyhowError> {
 		let mut resp = volo_gen::volo::example::GetItemResponse{op: " ".into(), key: " ".into(), val: " ".into(), status: false};
-		println!("收到！");
+		println!("\n收到指令");
 		println!("cur_port: {}", self.port.lock().unwrap());
 		let option = format!("{}\t{}\t{}\n", _req.op.to_string(), _req.key.to_string(), _req.val.to_string());
 		println!("option is {}", option);
@@ -83,36 +98,60 @@ impl volo_gen::volo::example::ItemService for S {
 				resp.op = "set".to_string().into();
 				//let k = _req.key.to_string();
 				//let v = _req.val.to_string();
-				let mut flag = 0;
-				if self.kv.lock().unwrap().get(&k) == None {
-					flag = 1;
-				}
+				let flag = self.is_master();
 				match flag {
-					1 => {
+					true => {
 						self.kv.lock().unwrap().insert(k, v);
 						//resp.val = v.clone().into();
 						//resp.key = k.clone().into();
 						resp.status = true;
-						if self.port.lock().unwrap().to_string() != "22222" {
-							println!("inner-send");
-							let addr: SocketAddr = "127.0.0.1:22222".parse().unwrap();
+						println!("Send to slaves");
+						// let addr: SocketAddr = "127.0.0.1:22222".parse().unwrap();
+						let slaves = self.slaves.lock().unwrap().clone();
+						for port in slaves {
+							let mut tmp_req = _req.clone();
+							tmp_req.op = "mset".to_string().into();
+							let addr = format!("127.0.0.1:{}", port);
+							let addr: SocketAddr = addr.parse().unwrap();
 							let sender = volo_gen::volo::example::ItemServiceClientBuilder::new("volo-example")
 								.address(addr)
 								.build();
-							sender.get_item(_req).await;
+							let _res = sender.get_item(tmp_req).await;
 						}
 						self.aof.lock().unwrap().write_all(option.as_ref()).expect("TODO: panic message");
 						println!("aof has been written!");
 						self.aof.lock().unwrap().flush().expect("Err");
 						println!("aof has been flushed!");
 					}
-					0 => {
-						resp.status = false;
-					}
-					_ => {
+					false => {
 						resp.status = false;
 					}
 				}
+			}
+			"mset" => {
+				resp.op = "mset".to_string().into();
+				//let k = _req.key.to_string();
+				//let v = _req.val.to_string();
+				self.kv.lock().unwrap().insert(k, v);
+				//resp.val = v.clone().into();
+				//resp.key = k.clone().into();
+				resp.status = true;
+				println!("sent as slave");
+				// let addr: SocketAddr = "127.0.0.1:22222".parse().unwrap();
+				// let slaves = self.slaves.lock().unwrap().clone();
+				// for port in slaves {
+				// 	let tmp_req = _req.clone();
+				// 	let addr = format!("127.0.0.1:{}", port);
+				// 	let addr: SocketAddr = addr.parse().unwrap();
+				// 	let sender = volo_gen::volo::example::ItemServiceClientBuilder::new("volo-example")
+				// 		.address(addr)
+				// 		.build();
+				// 	let _res = sender.get_item(tmp_req).await;
+				// }
+				// self.aof.lock().unwrap().write_all(option.as_ref()).expect("TODO: panic message");
+				// println!("aof has been written!");
+				// self.aof.lock().unwrap().flush().expect("Err");
+				// println!("aof has been flushed!");
 			}
 			"get" => {
 				resp.op = "get".to_string().into();
@@ -126,9 +165,9 @@ impl volo_gen::volo::example::ItemService for S {
 						//resp.key = k.clone().into();
 						resp.status = true;
 						//self.aof.lock().unwrap().write_all(option.as_ref()).expect("TODO: panic message");
-						println!("aof has been written!");
+						// println!("aof has been written!");
 						//self.aof.lock().unwrap().flush().expect("Err");
-						println!("aof has been flushed!");
+						// println!("aof has been flushed!");
 
 					}
 				}
@@ -136,15 +175,42 @@ impl volo_gen::volo::example::ItemService for S {
 			"del" => {
 				resp.op = "del".to_string().into();
 				//let k = _req.key.to_string();
-				match self.kv.lock().unwrap().remove(&k) {
-					Some(t) => {
-						resp.status = true;
-						self.aof.lock().unwrap().write_all(option.as_ref()).expect("TODO: panic message");
+				let flag = self.is_master();
+				match flag {
+					true => {
+						let res = self.kv.lock().unwrap().remove(&k);
+						match res.is_some() {
+							true => {
+								resp.status = true;
+								println!("Send to slaves");
+								let slaves = self.slaves.lock().unwrap().clone();
+								for port in slaves {
+									let mut tmp_req = _req.clone();
+									tmp_req.op = "mdel".to_string().into();
+									let addr = format!("127.0.0.1:{}", port);
+									let addr: SocketAddr = addr.parse().unwrap();
+									let sender = volo_gen::volo::example::ItemServiceClientBuilder::new("volo-example")
+										.address(addr)
+										.build();
+									let _res = sender.get_item(tmp_req).await;
+								}
+								self.aof.lock().unwrap().write_all(option.as_ref()).expect("TODO: panic message");
+							}
+							false => {
+								resp.status = false;
+							}
+						}
 					}
-					None => {
+					false => {
 						resp.status = false;
 					}
 				}
+			}
+			"mdel" => {
+				resp.op = "mdel".to_string().into();
+				self.kv.lock().unwrap().remove(&k);
+				resp.status = true;
+				println!("sent as slave");
 			}
 			"ping" => {
 				resp.op = "ping".to_string().into();
@@ -152,7 +218,7 @@ impl volo_gen::volo::example::ItemService for S {
 			}
 			"subscribe" => {
 				//let k = _req.key.to_string();
-				let (mut tx, mut rx) = broadcast::channel(16);
+				let ( tx, mut rx) = broadcast::channel(16);
 				resp.op = "subscribe".to_string().into();
 				let mut is_exist = true;
 				if let Some(tx) = self.channels.lock().unwrap().get(&k) {
@@ -171,7 +237,7 @@ impl volo_gen::volo::example::ItemService for S {
 						resp.status = true;
 						self.aof.lock().unwrap().write_all(option.as_ref()).expect("TODO: panic message");
 					}
-					Err(e) => {
+					Err(_e) => {
 						resp.status = false;
 					}
 				}
@@ -187,7 +253,7 @@ impl volo_gen::volo::example::ItemService for S {
 								resp.val = FastStr::from((n as u8).to_string());
 								self.aof.lock().unwrap().write_all(option.as_ref()).expect("TODO: panic message");
 							}
-							Err(e) => {
+							Err(_e) => {
 								resp.status = false;
 							}
 						}
@@ -204,7 +270,7 @@ impl volo_gen::volo::example::ItemService for S {
 		println!("处理完毕，送回");
 		Ok(resp)
 		//Ok(Default::default())
-				}
+	}
 }
 pub struct FilterLayer;
 impl<S> volo::Layer<S> for FilterLayer {
