@@ -4,8 +4,13 @@ use std::net::SocketAddr;
 use volo_gen::volo::example::GetItemRequest;
 lazy_static! {
     static ref CLIENT: volo_gen::volo::example::ItemServiceClient = {
-        let addr: SocketAddr = "127.0.0.1:22222".parse().unwrap();
-        volo_gen::volo::example::ItemServiceClientBuilder::new("volo-example")
+        let args: Vec<String> = std::env::args().collect();
+        if args.len() == 1 {
+            tracing::error!("No Argument for Address!");
+        }
+        let addr = format!("127.0.0.1:{}", args[1]);
+        let addr: SocketAddr = addr.parse().unwrap();
+        volo_gen::volo::example::ItemServiceClientBuilder::new(args[1].clone())
             .address(addr)
             .build()
     };
