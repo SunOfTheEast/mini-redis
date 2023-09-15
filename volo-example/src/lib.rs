@@ -10,6 +10,9 @@ use volo::FastStr;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use tokio::io;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+
 
 // const DEFAULT_PROXY_ADDR: &str = "7777";
 
@@ -87,19 +90,13 @@ impl S {
 	pub fn add_cluster(&self, serv: String) {
 		self.cluster.lock().unwrap().push(serv);
 	}
-	pub fn distr_port(&self, mut key: String) -> String {	// distribute
-		let sum: &mut u32 = &mut 0;
-		let len = key.len();
-		for i in 0..key.len() {
-			let ch = key.remove(0);
-			let sum = *sum + (ch as u32);
-			if i == len - 1 {
-				let cluster_size = self.cluster.lock().unwrap().len();
-				let ind = sum as usize % cluster_size;
-				return self.cluster.lock().unwrap()[ind].clone();
-			}
-		}
-		"7777".to_string()
+	pub fn distr_port(&self, key: String) -> String {	// distribute
+		let mut s = DefaultHasher::new();
+		key.hash(&mut s);
+		let num = s.finish();
+		let cluster_size = self.cluster.lock().unwrap().len();
+		let ind = num as usize % cluster_size;
+		return self.cluster.lock().unwrap()[ind].clone();
 	}
 }
 

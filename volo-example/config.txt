@@ -1,0 +1,14 @@
+[proxy]
+port: 4333
+colony: 33333 22222
+[master server]
+port: 22222
+the number of slaver server: 2
+[slaver server]
+port: 7788 8899
+[master server]
+port: 33333
+the number of slaver server: 2
+[slaver server]
+port: 6666 5566
+
