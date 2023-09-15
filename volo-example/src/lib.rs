@@ -108,10 +108,10 @@ impl S {
 impl volo_gen::volo::example::ItemService for S {
 	async fn get_item(&self, _req: volo_gen::volo::example::GetItemRequest) -> core::result::Result<volo_gen::volo::example::GetItemResponse, volo_thrift::AnyhowError> {
 		let mut resp = volo_gen::volo::example::GetItemResponse{op: " ".into(), key: " ".into(), val: " ".into(), status: false};
-		println!("\n收到指令");
+		// println!("\n收到指令");
 		println!("cur_port: {}", self.port.lock().unwrap());
 		let option = format!("{}\t{}\t{}\n", _req.op.to_string(), _req.key.to_string(), _req.val.to_string());
-		println!("option is {}", option);
+		// println!("option is {}", option);
 		let k = _req.key.to_string();
 		let v = _req.val.to_string();
 		//let mut test_file = OpenOptions::new().append(true).create(true).open("temp.txt").expect("Failed to open file");
@@ -131,7 +131,7 @@ impl volo_gen::volo::example::ItemService for S {
 						//resp.val = v.clone().into();
 						//resp.key = k.clone().into();
 						resp.status = true;
-						println!("Send to slaves");
+						// println!("Send to slaves");
 						// let addr: SocketAddr = "127.0.0.1:22222".parse().unwrap();
 						let slaves = self.slaves.lock().unwrap().clone();
 						for port in slaves {
@@ -145,9 +145,9 @@ impl volo_gen::volo::example::ItemService for S {
 							let _res = sender.get_item(tmp_req).await;
 						}
 						self.aof.lock().unwrap().write_all(option.as_ref()).expect("TODO: panic message");
-						println!("aof has been written!");
+						// println!("aof has been written!");
 						self.aof.lock().unwrap().flush().expect("Err");
-						println!("aof has been flushed!");
+						// println!("aof has been flushed!");
 					}
 					false => {
 						resp.status = false;
@@ -240,7 +240,7 @@ impl volo_gen::volo::example::ItemService for S {
 						match res.is_some() {
 							true => {
 								resp.status = true;
-								println!("Send to slaves");
+								// println!("Send to slaves");
 								let slaves = self.slaves.lock().unwrap().clone();
 								for port in slaves {
 									let mut tmp_req = _req.clone();
@@ -338,7 +338,7 @@ impl volo_gen::volo::example::ItemService for S {
 				panic!("INVALID!");
 			}
 		}
-		println!("处理完毕，送回");
+		// println!("处理完毕，送回");
 		Ok(resp)
 		//Ok(Default::default())
 	}

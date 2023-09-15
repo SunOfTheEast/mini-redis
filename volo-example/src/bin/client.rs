@@ -9,7 +9,7 @@ lazy_static! {
             tracing::error!("No Argument for Address!");
         }
         let addr = format!("127.0.0.1:{}", args.last().unwrap());
-        println!("formed addr: {}", addr);
+        // println!("formed addr: {}", addr);
         let addr: SocketAddr = addr.parse().unwrap();
         volo_gen::volo::example::ItemServiceClientBuilder::new(args[1].clone())
             .address(addr)
@@ -33,7 +33,7 @@ async fn main() {
                 val: args.remove(1).clone().into(),
 
             };
-            println!("You are going to set {} to {}", req.clone().key, req.clone().val);
+            // println!("You are going to set {} to {}", req.clone().key, req.clone().val);
         }
         "get" => {
             req = GetItemRequest {
