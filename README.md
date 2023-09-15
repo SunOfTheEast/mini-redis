@@ -14,3 +14,4 @@
   - 运行客户端（端口号 8080），命令为 `get zju`
 - `cargo run --bin client set zju 1897 8080`
   - 运行客户端（端口号 8080），命令为 `set zju 1897`
+- 运行 `run.py` 会分析配置文件 `config.txt` 生成运行服务器的脚本 `run_servers.sh`
